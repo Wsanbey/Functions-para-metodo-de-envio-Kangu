@@ -266,6 +266,7 @@ if ( ! function_exists( 'hello_elementor_body_open' ) ) {
 
 // INICIALIZANDO O PROJETO *********************************************************************
 
+
 // Adiciona o método de envio personalizado ao WooCommerce
 function add_kangu_shipping_method( $methods ) {
     $methods['kangu_shipping'] = 'WC_Kangu_Shipping_Method';
@@ -296,150 +297,188 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
             add_action( 'woocommerce_update_options_shipping_' . $this->id, array( $this, 'process_admin_options' ) );
         }
 
-        // Define os campos de formulário para o método de envio
-        function init_form_fields() {
-            $this->form_fields = array(
-                'enabled' => array(
-                    'title'   => __( 'Habilitar/Desabilitar', 'woocommerce' ),
-                    'type'    => 'checkbox',
-                    'label'   => __( 'Habilitar Kangu Shipping', 'woocommerce' ),
-                    'default' => 'yes'
-                ),
-                'title' => array(
-                    'title'       => __( 'Título', 'woocommerce' ),
-                    'type'        => 'text',
-                    'description' => __( 'Título a ser exibido ao cliente durante o checkout.', 'woocommerce' ),
-                    'default'     => __( 'Kangu Shipping', 'woocommerce' ),
-                    'desc_tip'    => true,
-                ),
-                'productcep' => array(
-                    'title'       => __( 'CEP de Origem', 'woocommerce' ),
-                    'type'        => 'text',
-                    'description' => __( 'Informe o CEP de origem dos produtos.', 'woocommerce' ),
-                    'default'     => '',
-                    'desc_tip'    => true,
-                ),
-                'api_key' => array(
-                    'title'       => __( 'API Key', 'woocommerce' ),
-                    'type'        => 'text',
-                    'description' => __( 'Informe a chave da API Kangu.', 'woocommerce' ),
-                    'default'     => '',
-                    'desc_tip'    => true,
-                ),
-            );
-        }
+		// Define os campos de formulário para o método de envio
+		function init_form_fields() {
+			$this->form_fields = array(
+				'enabled' => array(
+					'title'   => __( 'Habilitar/Desabilitar', 'woocommerce' ),
+					'type'    => 'checkbox',
+					'label'   => __( 'Habilitar Kangu Shipping', 'woocommerce' ),
+					'default' => 'yes'
+				),
+				'title' => array(
+					'title'       => __( 'Título', 'woocommerce' ),
+					'type'        => 'text',
+					'description' => __( 'Título a ser exibido ao cliente durante o checkout.', 'woocommerce' ),
+					'default'     => __( 'Kangu Shipping', 'woocommerce' ),
+					'desc_tip'    => true,
+				),
+				'api_key' => array(
+					'title'       => __( 'API Key', 'woocommerce' ),
+					'type'        => 'text',
+					'description' => __( 'Informe a chave da API Kangu.', 'woocommerce' ),
+					'default'     => '',
+					'desc_tip'    => true,
+				),
+			);
+		}
 
-        // Calcula o custo de envio
-        public function calculate_shipping( $package = array() ) {
-            $cost = $this->get_shipping_cost( $package );
-
-            // Verifica se o custo retornado é válido
-            if ( $cost === 0 ) {
-                $cost = 100; // Defina um custo padrão ou de fallback, como 100.
-            }
-
-            $rate = array(
-                'id'    => $this->id,
-                'label' => $this->title,
-                'cost'  => $cost,
-                'calc_tax' => 'per_item'
-            );
-
-            $this->add_rate( $rate );
-        }
-
+		// Calcula o custo de envio
+		public function calculate_shipping( $package = array() ) {
+			// Chave de cache baseada no CEP de destino e peso total do carrinho
+			$cache_key = 'kangu_shipping_rates_' . md5( $package['destination']['postcode'] . WC()->cart->get_cart_contents_weight() );
+			
+			// Verifica se já existe cache armazenado na sessão
+			$cached_data = WC()->session->get($cache_key);
+			
+			if ( ! empty( $cached_data ) ) {
+				foreach ( $cached_data as $rate ) {
+					$this->add_rate( $rate );
+				}
+				return;
+			}
+		
+			// Obtém o custo de envio da API
+			$shipping_options = $this->get_shipping_cost( $package );
+			
+			// Verifica se o JSON foi obtido com sucesso
+			if (is_array($shipping_options)) {
+				// Ordena as opções de envio pelo prazo de entrega em ordem crescente
+				usort($shipping_options, function($a, $b) {
+					return $a['prazoEnt'] - $b['prazoEnt'];
+				});
+		
+				$rates = array(); // Array temporário para armazenar as taxas de envio
+		
+				// Adiciona as taxas de frete ordenadas
+				foreach ($shipping_options as $option) {
+					// Verifica se o valor do frete é válido
+					$cost = isset($option['vlrFrete']) ? $option['vlrFrete'] : 0;
+		
+					// Cria a descrição usando a descrição da opção e prazo de entrega
+					$description = sprintf(
+						"%s - R$ %.2f - Prazo de entrega: %d dias",
+						$option['descricao'],
+						$cost,
+						$option['prazoEnt']
+					);
+		
+					$rate = array(
+						'id'    => $option['idSimulacao'],
+						'label' => $description,
+						'cost'  => $cost,
+						'calc_tax' => 'per_item'
+					);
+		
+					// Armazena a taxa de envio no array temporário
+					$rates[] = $rate;
+		
+					// Adiciona a taxa de frete
+					$this->add_rate($rate);
+				}
+		
+				// Armazena as taxas de frete na sessão para reutilização
+				WC()->session->set($cache_key, $rates);
+		
+			} else {
+				// Lida com a falha ao obter os dados de frete
+				$this->add_rate(array(
+					'id'    => 'error',
+					'label' => 'Não foi possível calcular o frete.',
+					'cost'  => 100, // Define um custo padrão de fallback
+					'calc_tax' => 'per_item'
+				));
+			}
+		}
+		
         private function get_shipping_cost( $package ) {
-            $productcep = $this->get_option('productcep');
-            $api_key = $this->get_option('api_key');
-        
-            if ( empty( $productcep ) || empty( $api_key ) ) {
-                error_log('Kangu Shipping: CEP de origem ou API key não configurados.');
-                return 0;
-            }
-        
-            $url = 'https://portal.kangu.com.br/tms/transporte/simular';
-            
-            // Pega o valor declarado baseado no subtotal do carrinho
-            $valorDeclarado = WC()->cart->get_subtotal();
-            
-            // Validações adicionais para garantir que os valores não estão vazios ou errados
-            if ( empty( $package['destination']['postcode'] ) ) {
-                error_log('Kangu Shipping: CEP de destino não está definido.');
-                return 0;
-            }
-
-            if ( empty( WC()->cart->get_cart_contents_weight() ) ) {
-                error_log('Kangu Shipping: Peso do carrinho está vazio.');
-                return 0;
-            }
-
-            if ( $valorDeclarado <= 0 ) {
-                error_log('Kangu Shipping: Valor declarado está inválido: ' . $valorDeclarado);
-                return 0;
-            }
-        
-            // Monta o JSON com a estrutura desejada
-            $args = array(
-                'method'  => 'POST',
-                'headers' => array(
-                    'Content-Type' => 'application/json',
-                    'token' => $api_key,
-                ),
-                'body'    => wp_json_encode( array(
-                    'cepOrigem'   => $productcep,
-                    'cepDestino'  => $package['destination']['postcode'],
-                    'vlrMerc'     => $valorDeclarado,
-                    'pesoMerc'    => WC()->cart->get_cart_contents_weight(),
-                    'produtos'    => array_map( function( $item ) {
-                        return array(
-                            'peso'          => $item['data']->get_weight(), // Peso do produto
-							'altura'        => $item['data']->get_height(), // Altura do produto
-							'largura'       => $item['data']->get_width(),  // Largura do produto
-							'comprimento'   => $item['data']->get_length(), // Comprimento do produto
-							'valor'         => $item['data']->get_price(),  // Preço do produto
-							'quantidade'    => $item['quantity'],           // Quantidade no carrinho
-                        );
-                    }, WC()->cart->get_cart() ),
-                    'servicos'    => array( 'express' ),
-                    'ordernar'    => 'prazo',
-                ) ),
-            );
-        
-            $response = wp_remote_post( $url, $args );
-        
-            if ( is_wp_error( $response ) ) {
-                error_log('Kangu Shipping: Erro na chamada da API: ' . $response->get_error_message());
-                return 0;
-            }
-        
-            $body = wp_remote_retrieve_body( $response );
-            $http_code = wp_remote_retrieve_response_code( $response );
-            error_log('Kangu Shipping: HTTP Response Code: ' . $http_code);
-            error_log('Kangu Shipping: Response Body: ' . $body);
-            $data = json_decode( $body, true );
-        
-            if ( empty( $data ) || ! isset( $data['vlrFrete'] ) || $data['vlrFrete'] === null ) {
-                error_log('Kangu Shipping: Resposta da API inválida ou valor de frete não encontrado.');
-                if ( isset( $data['error'] ) ) {
-                    error_log('Kangu Shipping: Erro retornado pela API: ' . $data['error']['mensagem']);
-                }
-                return 0;
-            }
-        
-            $valorFrete = $data['vlrFrete'];
-            error_log('Kangu Shipping: Valor do frete calculado: ' . $valorFrete);
-            
-            return $valorFrete;
-        }
+			$api_key = $this->get_option('api_key');
+			$cache_key = 'kangu_shipping_' . md5( $package['destination']['postcode'] . WC()->cart->get_cart_contents_weight() . WC()->cart->get_subtotal() );
+		
+			// Tenta obter os dados do cache
+			$cached_data = get_transient( $cache_key );
+			if ( $cached_data !== false ) {
+				return $cached_data;
+			}
+		
+			if ( empty( $api_key ) ) {
+				error_log('Kangu Shipping: API key não configurada.');
+				return array();
+			}
+		
+			// Obtém o CEP de origem para cada produto no carrinho
+			$product_ceps = array();
+			foreach ( WC()->cart->get_cart() as $cart_item ) {
+				$product_id = $cart_item['product_id'];
+				$product_cep = get_post_meta( $product_id, 'product_postcode', true );
+				if ( !empty( $product_cep ) ) {
+					$product_ceps[] = $product_cep;
+				}
+			}
+		
+			// Usa o primeiro CEP encontrado, ou um valor padrão se nenhum for encontrado
+			$productcep = !empty( $product_ceps ) ? $product_ceps[0] : $this->get_option('productcep');
+		
+			if ( empty( $productcep ) ) {
+				error_log('Kangu Shipping: CEP de origem não configurado.');
+				return array();
+			}
+		
+			$url = 'https://portal.kangu.com.br/tms/transporte/simular';
+			$valorDeclarado = WC()->cart->get_subtotal();
+			$args = array(
+				'method'  => 'POST',
+				'timeout' => 30,  // Aumenta o timeout para 30 segundos
+				'headers' => array(
+					'Content-Type' => 'application/json',
+					'token' => $api_key,
+				),
+				'body'    => wp_json_encode( array(
+					'cepOrigem'   => $productcep,
+					'cepDestino'  => $package['destination']['postcode'],
+					'vlrMerc'     => $valorDeclarado,
+					'pesoMerc'    => WC()->cart->get_cart_contents_weight(),
+					'produtos'    => array_map( function( $item ) {
+						return array(
+							'peso'          => $item['data']->get_weight(),
+							'altura'        => $item['data']->get_height(),
+							'largura'       => $item['data']->get_width(),
+							'comprimento'   => $item['data']->get_length(),
+							'valor'         => $item['data']->get_price(),
+							'quantidade'    => $item['quantity'],
+						);
+					}, WC()->cart->get_cart() ),
+					'servicos'    => array( 'express' ),
+					'ordernar'    => 'prazo',
+				) ),
+			);
+		
+			$response = wp_remote_post( $url, $args );
+		
+			if ( is_wp_error( $response ) ) {
+				error_log('Kangu Shipping: Erro na chamada da API: ' . $response->get_error_message());
+				return array();
+			}
+		
+			$body = wp_remote_retrieve_body( $response );
+			$data = json_decode( $body, true );
+		
+			if ( empty( $data ) || ! is_array( $data ) ) {
+				error_log('Kangu Shipping: Resposta da API inválida.');
+				return array();
+			}
+		
+			// Armazena os dados no cache por 1 hora
+			set_transient( $cache_key, $data, HOUR_IN_SECONDS );
+		
+			return $data;
+		}		
     }
 }
 
 // Inicializa o método de envio ao WooCommerce
 function kangu_shipping_method_init() {
     error_log('Kangu Shipping Method Loaded');
-
-    if ( class_exists( 'WC_Kangu_Shipping_Method' ) ) {
-        add_action( 'woocommerce_shipping_init', 'add_kangu_shipping_method' );
-    }
 }
 add_action( 'woocommerce_shipping_init', 'kangu_shipping_method_init' );
+
