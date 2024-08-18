@@ -343,6 +343,16 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 			
 			// Verifica se o JSON foi obtido com sucesso
 			if (is_array($shipping_options)) {
+				// Verifica se há um erro na resposta da API
+				if (isset($shipping_options['error'])) {
+					// Loga o erro no console
+					error_log('Kangu Shipping Error: ' . $shipping_options['error']['mensagem']);
+					
+					// Adiciona uma mensagem de erro amigável como aviso, mas sem virar uma opção de frete
+					wc_add_notice( 'O método de envio Kangu está indisponível para este item.', 'error' );
+					return;  // Interrompe a execução para garantir que nenhuma opção de frete será adicionada
+				}
+		
 				// Ordena as opções de envio pelo prazo de entrega em ordem crescente
 				usort($shipping_options, function($a, $b) {
 					return $a['prazoEnt'] - $b['prazoEnt'];
@@ -354,15 +364,17 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 				foreach ($shipping_options as $option) {
 					// Verifica se o valor do frete é válido
 					$cost = isset($option['vlrFrete']) ? $option['vlrFrete'] : 0;
-		
+			  
 					// Cria a descrição usando a descrição da opção e prazo de entrega
 					$description = sprintf(
-						"%s - R$ %.2f - Prazo de entrega: %d dias",
+						"%s: R$ %.2f: <br><p>Entrega em até %d dias úteis</p>",
 						$option['descricao'],
 						$cost,
 						$option['prazoEnt']
 					);
 		
+					error_log("Descrição gerada: " . $description);
+					
 					$rate = array(
 						'id'    => $option['idSimulacao'],
 						'label' => $description,
@@ -381,13 +393,9 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 				WC()->session->set($cache_key, $rates);
 		
 			} else {
-				// Lida com a falha ao obter os dados de frete
-				$this->add_rate(array(
-					'id'    => 'error',
-					'label' => 'Não foi possível calcular o frete.',
-					'cost'  => 100, // Define um custo padrão de fallback
-					'calc_tax' => 'per_item'
-				));
+				// Exibe uma mensagem de erro amigável ao usuário
+				wc_add_notice('O método de envio Kangu está temporariamente indisponível.', 'error');
+				return;
 			}
 		}
 		
