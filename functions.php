@@ -1,5 +1,3 @@
-<?php
-
 function add_kangu_shipping_method( $methods ) {
     $methods['kangu_shipping'] = 'WC_Kangu_Shipping_Method';
     return $methods;
@@ -52,6 +50,14 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
                     'default'     => '',
                     'desc_tip'    => true,
                 ),
+				'default_postcode' => array(
+					'title' 		=> __( 'CEP Padrão', 'woocommerce' ),
+					'type'		  => 'text',
+					'description' => __( 'Informe um CEP padrão a ser utilizado quando o produto não tiver um CEP de origem definido Ex.: 00000000.', 'woocommerce'),
+					'default' 	 => '',
+					'desc_tip' => true,
+					//'placeholder' => '00000000',
+				)
             );
         }
 		//**************************************************************** Iniciar alterações:
@@ -211,13 +217,19 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 
 		private function get_shipping_cost_for_product( $package, $product_cep, $cart_item ) {
 			$api_key = $this->get_option('api_key');
-
+			$default_postcode =  $this->get_option('default_postcode');
+						
 			if ( empty( $api_key ) ) {
 				error_log('Kangu Shipping: API key não configurada.');
 				return array();
 			}
+			
+			if ( empty($product_cep) ){
+				$product_cep = $defaul_postcode;
+			}
 
 			$url = 'https://portal.kangu.com.br/tms/transporte/simular';
+			
 			// Calcula o valor declarado, limitando-o a R$3500,00
 			$valorDeclarado = $cart_item['data']->get_price() * $cart_item['quantity'];
 			$valorDeclarado = min($valorDeclarado, 3500.00);
