@@ -1,3 +1,4 @@
+<?php
 function add_kangu_shipping_method( $methods ) {
     $methods['kangu_shipping'] = 'WC_Kangu_Shipping_Method';
     return $methods;
@@ -7,6 +8,8 @@ add_filter( 'woocommerce_shipping_methods', 'add_kangu_shipping_method' );
 // Define a classe do método de envio personalizado
 if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
     class WC_Kangu_Shipping_Method extends WC_Shipping_Method {
+		const CACHE_EXPIRATION_TIME = 60; // Tempo de expiração do cache em segundos
+		
         public function __construct() {
             $this->id                 = 'kangu_shipping'; 
             $this->method_title       = __( 'Kangu Shipping', 'woocommerce' ); 
@@ -17,7 +20,6 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 
         // Inicializa as configurações
         function init() {
-            // Carregar configurações
             $this->init_form_fields();
             $this->init_settings();
 
@@ -50,19 +52,53 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
                     'default'     => '',
                     'desc_tip'    => true,
                 ),
-				'default_postcode' => array(
-					'title' 		=> __( 'CEP Padrão', 'woocommerce' ),
-					'type'		  => 'text',
-					'description' => __( 'Informe um CEP padrão a ser utilizado quando o produto não tiver um CEP de origem definido Ex.: 00000000.', 'woocommerce'),
-					'default' 	 => '',
-					'desc_tip' => true,
-					//'placeholder' => '00000000',
-				)
+                'default_postcode' => array(
+                    'title'       => __( 'CEP Padrão', 'woocommerce' ),
+                    'type'        => 'text',
+                    'description' => __( 'Informe um CEP padrão a ser utilizado quando o produto não tiver um CEP de origem definido Ex.: 00000000.', 'woocommerce'),
+                    'default'     => '',
+                    'desc_tip'    => true,
+                ),
+                'default_days' => array(
+                    'title'       => __( 'Dias Adicionais', 'woocommerce' ),
+                    'type'        => 'number',
+                    'description' => __( 'Número de dias adicionais a serem adicionados ao prazo de entrega.', 'woocommerce' ),
+                    'default'     => 0,
+                    'desc_tip'    => true,
+                ),
+                'extra_weight_cost' => array(
+                    'title'       => __( 'Custo por Peso Adicional', 'woocommerce' ),
+                    'type'        => 'number',
+                    'description' => __( 'Custo adicional por kg além do peso base.', 'woocommerce' ),
+                    'default'     => 0,
+                    'desc_tip'    => true,
+                ),
+                'handling_fee' => array(
+                    'title'       => __( 'Taxa de Manuseio', 'woocommerce' ),
+                    'type'        => 'number',
+                    'description' => __( 'Taxa fixa de manuseio para cada pedido.', 'woocommerce' ),
+                    'default'     => 0,
+                    'desc_tip'    => true,
+                    'custom_attributes' => array(
+                        'step' => '0.01', // Permite casas decimais
+                        'min'  => '0'
+                    ),
+                ),
+                'cart_fee' => array(
+                    'title'       => __( 'Taxa do Carrinho', 'woocommerce' ),
+                    'type'        => 'number',
+                    'description' => __( 'Taxa fixa ou percentual adicional baseada no subtotal do carrinho.', 'woocommerce' ),
+                    'default'     => 0,
+                    'desc_tip'    => true,
+                    'custom_attributes' => array(
+                        'step' => '0.01', // Permite casas decimais
+                        'min'  => '0'
+                    ),
+                ),
             );
         }
 		//**************************************************************** Iniciar alterações:
-    
-        // Calcula o custo de envio
+ 		 // Calcula o custo de envio
 		public function calculate_shipping( $package = array() ) {
 		// Chave de cache baseada no CEP de destino e peso total do carrinho
 		$cache_key = 'kangu_shipping_rates_' . md5( $package['destination']['postcode'] . WC()->cart->get_cart_contents_weight() );
