@@ -72,6 +72,10 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
                     'description' => __( 'Custo adicional por kg além do peso base.', 'woocommerce' ),
                     'default'     => 0,
                     'desc_tip'    => true,
+                    'custom_attributes' => array(
+                        'step' => '0.01', // Permite casas decimais
+                        'min'  => '0'
+					),
                 ),
                 'handling_fee' => array(
                     'title'       => __( 'Taxa de Manuseio', 'woocommerce' ),
@@ -132,7 +136,9 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 				add_action('wp_footer', array($this, 'enqueue_no_shipping_notice_script'), 20);
 				return;
 			}
-
+			// Obtém os dias adicionais das configurações
+			$additional_days = intval($this->get_option('default_days', 0));
+			
 			// Ordena as opções de envio pelo prazo de entrega em ordem crescente
 			usort($shipping_options, function($a, $b) {
 				return $a['prazoEnt'] - $b['prazoEnt'];
@@ -141,11 +147,12 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 			$rates = array(); // Array temporário para armazenar as taxas de envio
 
 			foreach ($shipping_options as $option) {
+								
 				$cost = isset($option['vlrFrete']) ? $option['vlrFrete'] : 0;
 				$description = sprintf(
 					"%s ( Entrega em até %d dias úteis )",
 					$option['descricao'],
-					$option['prazoEnt']
+					$delivery_time
 				);
 
 				$rate = array(
@@ -198,58 +205,104 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 		}
 	}
 
+	
 		//************************************************************************ Finalizando
  
-		private function get_shipping_cost( $package ) {
-			$rates = array(); // Array temporário para armazenar as taxas de envio
-
-			// Processa cada produto no carrinho separadamente
-			foreach ( WC()->cart->get_cart() as $cart_item ) {
-				$product_id = $cart_item['product_id'];
-				$product_cep = get_post_meta( $product_id, 'product_postcode', true );
-
-				if ( empty( $product_cep ) ) {
-					// Se não houver CEP configurado para o produto, usa um CEP padrão ou ignora
-					$product_cep = $this->get_option('productcep');
-				}
-
-				// Chama a API de frete para o produto individual
-				$shipping_options = $this->get_shipping_cost_for_product( $package, $product_cep, $cart_item );
-
-				// Adiciona as opções de frete ao array de taxas
-				if ( is_array( $shipping_options ) ) {
-					foreach ( $shipping_options as $option ) {
-						$cost = isset( $option['vlrFrete'] ) ? $option['vlrFrete'] : 0;
-						$delivery_time = isset( $option['prazoEnt'] ) ? $option['prazoEnt'] : 0;
-
-						// Valida se o prazo de entrega e o custo são válidos
-						if ( $cost > 0 && $delivery_time > 0 ) {
-							$description = sprintf(
-								"%s ( Entrega em até %d dias úteis )",
-								$option['descricao'],
-								$delivery_time
-							);
-
-							$rate = array(
-								'id'    => $option['idSimulacao'] . '-' . $product_id,
-								'label' => $description,
-								'cost'  => $cost,
-								'calc_tax' => 'per_item'
-							);
-
-							$rates[] = $rate;
-						}
+	private function get_shipping_cost( $package ) {
+		$rates = array(); // Array temporário para armazenar as taxas de envio
+	
+		// Processa cada produto no carrinho separadamente
+		foreach ( WC()->cart->get_cart() as $cart_item ) {
+			$product_id = $cart_item['product_id'];
+			$product_cep = get_post_meta( $product_id, 'product_postcode', true );
+	
+			// Obtém Dias Adicionais das configurações
+			$additional_days = intval( $this->get_option('default_days') );
+	
+			// Obtém a Custo por Peso Adicional das configurações
+			$extra_weight_cost = floatval( $this->get_option('extra_weight_cost') );
+	
+			// Obtém o Limite de Peso das configurações (exemplo: 5kg)
+			$weight_limit = floatval( $this->get_option('weight_limit') );
+	
+			// Obtém a Taxa de Manuseio das configurações
+			$handling_fee = floatval( $this->get_option('handling_fee') );
+	
+			// Obtém a Taxa de Taxa do Carrinho das configurações (percentual)
+			$cart_fee = floatval( $this->get_option('cart_fee') );
+	
+			if ( empty( $product_cep ) ) {
+				// Se não houver CEP configurado para o produto, usa um CEP padrão ou ignora
+				$product_cep = $this->get_option('productcep');
+			}
+	
+			// Chama a API de frete para o produto individual
+			$shipping_options = $this->get_shipping_cost_for_product( $package, $product_cep, $cart_item );
+	
+			// Adiciona as opções de frete ao array de taxas
+			if ( is_array( $shipping_options ) ) {
+				foreach ( $shipping_options as $option ) {
+	
+					// Obtém o valor do frete
+					$cost = isset($option['vlrFrete']) ? floatval($option['vlrFrete']) : 0;
+	
+					// Obtém o peso do item no carrinho
+					$product_weight = floatval( $cart_item['data']->get_weight() );
+	
+					// Calcula o peso adicional, se o peso do produto ultrapassar o limite
+					$additional_weight = $product_weight > $weight_limit ? $product_weight - $weight_limit : 0;
+	
+					// Calcula o custo adicional por peso extra
+					$extra_weight_cost_total = $additional_weight * $extra_weight_cost;
+	
+					// Aplica a taxa de carrinho (percentual) ao custo do frete
+					$cart_fee_amount = ($cost * $cart_fee) / 100;
+	
+					// Calcula o custo total do frete com peso adicional
+					$total_shipping_cost = $cost + $cart_fee_amount + $handling_fee + $extra_weight_cost_total;
+	
+					// Registra os valores das variáveis para fins de depuração
+					error_log("Valor de \$cost: $cost");
+					error_log("Valor de \$cart_fee: $cart_fee");
+					error_log("Valor de \$cart_fee_amount: $cart_fee_amount");
+					error_log("Valor de \$handling_fee: $handling_fee");
+					error_log("Valor de \$additional_weight: $additional_weight");
+					error_log("Valor de \$extra_weight_cost_total: $extra_weight_cost_total");
+					error_log("Valor de \$total_shipping_cost: $total_shipping_cost");
+	
+					// Adiciona os dias adicionais ao prazo de entrega
+					$delivery_time = intval($option['prazoEnt']) + $additional_days;
+	
+					// Valida se o prazo de entrega e o custo são válidos
+					if ( $cost > 0 && $delivery_time > 0 ) {
+						$description = sprintf(
+							"%s ( Entrega em até %d dias úteis )",
+							$option['descricao'],
+							$delivery_time
+						);
+	
+						$rate = array(
+							'id'    => $option['idSimulacao'] . '-' . $product_id,
+							'label' => $description,
+							'cost'  => $total_shipping_cost,
+							'calc_tax' => 'per_item'
+						);
+	
+						$rates[] = $rate;
 					}
 				}
 			}
-
-			// Se não houver taxas válidas, não faz nada (não exibe mensagem de erro)
-			if ( !empty( $rates ) ) {
-				foreach ( $rates as $rate ) {
-					$this->add_rate( $rate );
-				}
+		}
+	
+		// Se não houver taxas válidas, não faz nada (não exibe mensagem de erro)
+		if ( !empty( $rates ) ) {
+			foreach ( $rates as $rate ) {
+				$this->add_rate( $rate );
 			}
 		}
+	}
+		
+			
 
 		private function get_shipping_cost_for_product( $package, $product_cep, $cart_item ) {
 			$api_key = $this->get_option('api_key');
