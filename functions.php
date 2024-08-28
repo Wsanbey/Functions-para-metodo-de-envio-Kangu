@@ -1,6 +1,6 @@
 <?php
 // // INICIALIZANDO O PROJETO *********************************************************************
-
+// Adiciona o método de envio personalizado ao WooCommerce
 function add_kangu_shipping_method( $methods ) {
     $methods['kangu_shipping'] = 'WC_Kangu_Shipping_Method';
     return $methods;
@@ -10,8 +10,6 @@ add_filter( 'woocommerce_shipping_methods', 'add_kangu_shipping_method' );
 // Define a classe do método de envio personalizado
 if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
     class WC_Kangu_Shipping_Method extends WC_Shipping_Method {
-		const CACHE_EXPIRATION_TIME = 60; // Tempo de expiração do cache em segundos
-		
         public function __construct() {
             $this->id                 = 'kangu_shipping'; 
             $this->method_title       = __( 'Kangu Shipping', 'woocommerce' ); 
@@ -22,6 +20,7 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 
         // Inicializa as configurações
         function init() {
+            // Carregar configurações
             $this->init_form_fields();
             $this->init_settings();
 
@@ -31,7 +30,7 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
             add_action( 'woocommerce_update_options_shipping_' . $this->id, array( $this, 'process_admin_options' ) );
         }
 
-        // Define os campos de formulário para o método de envio
+		// Define os campos de formulário para o método de envio
         function init_form_fields() {
             $this->form_fields = array(
                 'enabled' => array(
@@ -54,13 +53,13 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
                     'default'     => '',
                     'desc_tip'    => true,
                 ),
-                'default_postcode' => array(
-                    'title'       => __( 'CEP Padrão', 'woocommerce' ),
-                    'type'        => 'text',
-                    'description' => __( 'Informe um CEP padrão a ser utilizado quando o produto não tiver um CEP de origem definido Ex.: 00000000.', 'woocommerce'),
-                    'default'     => '',
-                    'desc_tip'    => true,
-                ),
+//                 'default_postcode' => array(
+//                     'title'       => __( 'CEP Padrão', 'woocommerce' ),
+//                     'type'        => 'text',
+//                     'description' => __( 'Informe um CEP padrão a ser utilizado quando o produto não tiver um CEP de origem definido Ex.: 00000000.', 'woocommerce'),
+//                     'default'     => '',
+//                     'desc_tip'    => true,
+//                 ),
                 'default_days' => array(
                     'title'       => __( 'Dias Adicionais', 'woocommerce' ),
                     'type'        => 'number',
@@ -101,14 +100,11 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
                         'min'  => '0'
                     ),
                 ),
-
-//***************************-- TITULO --*************************************** 	
 				'section_title' => array(
 				'title'       => '<h1>' . __( 'Configurar métodos de envio', 'woocommerce' ) . '</h1>',
 				'type'        => 'title',
 				'description' => __( 'Defina as configurações para os métodos de envio disponíveis.', 'woocommerce' ),
-				),
-//***************************-- INICIL DA: Seção dos metódos de envios	--*************************************** 		
+				), 		
 				'pac_section_title' => array(
 				'title'       => __( 'Correios PAC via Kangu', 'woocommerce' ),
 				'type'        => 'title',
@@ -126,7 +122,6 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 					'default'     => __( 'Correios PAC via Kangu', 'woocommerce' ),
 					'desc_tip'    => true,
 				),
-//***************************-- INICIL
 				'correios_sedex_section_title' => array(
 					'title'       => __( 'Correios Sedex via Kangu', 'woocommerce' ),
 					'type'        => 'title',
@@ -144,7 +139,6 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 					'default'     => __( 'Correios Sedex via Kangu', 'woocommerce' ),
 					'desc_tip'    => true,
 				),
-//***************************-- INICIL
 				'loggi_section_title' => array(
 					'title'       => __( 'Loggi via Kangu', 'woocommerce' ),
 					'type'        => 'title',
@@ -162,7 +156,6 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 					'default'     => __( 'Loggi via Kangu', 'woocommerce' ),
 					'desc_tip'    => true,
 				),
-//***************************-- INICIL
 				'jadlog_section_title' => array(
 					'title'       => __( 'Jadlog via Kangu', 'woocommerce' ),
 					'type'        => 'title',
@@ -179,35 +172,166 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 					'description' => __( 'Nome que será exibido para este método de envio durante o checkout.', 'woocommerce' ),
 					'default'     => __( 'Jadlog via Kangu', 'woocommerce' ),
 					'desc_tip'    => true,
-				),
-
-
-//**************************-- FINAL DA: Seção dos metódos de envios --*************************************** 	
-
+				), 
             );
         }
+		
+//**************************-- FINAL DA: Seção dos metódos de envios --*************************************** 	
 
 		// Calcula o custo de envio
 		public function calculate_shipping( $package = array() ) {
-		// Chave de cache baseada no CEP de destino e peso total do carrinho
-		$cache_key = 'kangu_shipping_rates_' . md5( $package['destination']['postcode'] . WC()->cart->get_cart_contents_weight() );
 
-		// Verifica se já existe cache armazenado na sessão
-		$cached_data = WC()->session->get($cache_key);
+			// Chave de cache baseada no CEP de destino e peso total do carrinho
+			$cache_key = 'kangu_shipping_rates_' . md5( $package['destination']['postcode'] . WC()->cart->get_cart_contents_weight() );
 
-		if ( ! empty( $cached_data ) ) {
-			foreach ( $cached_data as $rate ) {
-				$this->add_rate( $rate );
+			// Verifica se já existe cache armazenado na sessão
+			$cached_data = WC()->session->get($cache_key);
+
+			if ( ! empty( $cached_data ) ) {
+				foreach ( $cached_data as $rate ) {
+					$this->add_rate( $rate );
+				}
+				return;
 			}
-			return;
-		}
 
-		// Obtém o custo de envio da API
-		$shipping_options = $this->get_shipping_cost( $package );
+			// Obtém o custo de envio da API
+			$shipping_options = $this->get_shipping_cost( $package );
 
-		// Verifica se o JSON foi obtido com sucesso
-		if (is_array($shipping_options)) {
-			if (isset($shipping_options['error']) || empty($shipping_options)) {
+			// Verifica se o JSON foi obtido com sucesso
+			if (is_array($shipping_options)) {
+				// Ordena as opções de envio pelo prazo de entrega em ordem crescente
+				usort($shipping_options, function($a, $b) {
+					return $a['prazoEnt'] - $b['prazoEnt'];
+				});
+
+				$rates = array(); // Array temporário para armazenar as taxas de envio
+
+				// Obtém Dias Adicionais das configurações
+				$additional_days = intval( $this->get_option('default_days') );  
+
+				// Obtém a Custo por Peso Adicional das configurações
+				$extra_weight_cost = floatval( $this->get_option('extra_weight_cost') );
+
+				// Obtém o Limite de Peso das configurações (exemplo: 5kg)
+				$weight_limit = floatval( $this->get_option('weight_limit') );
+
+				// Obtém a Taxa de Manuseio das configurações
+				$handling_fee = floatval( $this->get_option('handling_fee') );
+
+				// Obtém a Taxa de Taxa do Carrinho das configurações (percentual)
+				$cart_fee = floatval( $this->get_option('cart_fee') );
+
+				// Define os métodos de envio disponíveis e suas configurações dinâmicas
+				$shipping_methods = array(
+					'Correios PAC via Kangu' => array(
+						'enabled' => $this->get_option('pac_enabled') === 'yes',
+						'display_name' => $this->get_option('pac_display_name', 'Correios PAC via Kangu'),
+					),
+					'Correios Sedex via Kangu' => array(
+						'enabled' => $this->get_option('correios_sedex_enabled') === 'yes',
+						'display_name' => $this->get_option('correios_sedex_display_name', 'Correios Sedex via Kangu'),
+					),
+					'Loggi via Kangu' => array(
+						'enabled' => $this->get_option('loggi_enabled') === 'yes',
+						'display_name' => $this->get_option('loggi_display_name', 'Loggi via Kangu'),
+					),
+					'Jadlog via Kangu' => array(
+						'enabled' => $this->get_option('jadlog_enabled') === 'yes',
+						'display_name' => $this->get_option('jadlog_display_name', 'Jadlog via Kangu'),
+					),	
+					// Adicione mais métodos de envio conforme necessário
+				);
+
+				// Adiciona as taxas de frete ordenadas
+				foreach ($shipping_options as $option) {
+
+					// Nome da transportadora vindo da API
+					$descricao_api = $option['descricao'];
+					
+					// Obtém o valor do frete vindo da API
+					$cost = isset($option['vlrFrete']) ? floatval($option['vlrFrete']) : 0;
+
+					// Obtém o peso total dos itens no carrinho
+					$cart_weight = WC()->cart->get_cart_contents_weight();
+
+					// Calcula o peso adicional, se o peso do carrinho ultrapassar o limite definido
+					$additional_weight = $cart_weight > $weight_limit ? $cart_weight - $weight_limit : 0;
+
+					// Calcula o custo adicional por peso extra
+					$extra_weight_cost_total = $additional_weight * $extra_weight_cost;
+
+					// Aplica a taxa do carrinho (percentual) ao custo do frete
+					$cart_fee_amount = ($cost * $cart_fee) / 100;
+
+					// Calcula o custo total do frete incluindo peso adicional, taxa de manuseio e taxa do carrinho
+					$total_shipping_cost = $cost + $cart_fee_amount + $handling_fee + $extra_weight_cost_total;
+
+					// Adiciona os dias adicionais ao prazo de entrega
+					$delivery_time = intval($option['prazoEnt']) + $additional_days;
+
+					// Loop para verificar correspondência com os métodos de envio configurados
+					foreach ( $shipping_methods as $method_key => $method_data ) {
+						//error_log("descricao_api foi: " .$method_key);
+						//error_log("descricao_api JOSON foi: " .$descricao_api);
+						
+
+						if ( $method_data['enabled'] && strtolower($descricao_api) === strtolower($method_key) ) {
+							// Se houver correspondência, use o nome personalizado
+							$descricao_api = $method_data['display_name'];
+
+							// Valida se o prazo de entrega e o custo são válidos
+							if ( $cost > 0 && $delivery_time > 0 ) {
+									// Formata a descrição do método de envio para exibição
+									$description = sprintf(
+										"%s - R$ %.2f (Entrega em até %d dias úteis)",
+										$descricao_api,
+										$total_shipping_cost,  // Usando o custo total calculado
+										$delivery_time
+									);
+
+									// Cria a taxa de envio que será adicionada
+									$rate = array(
+										'id'    => $option['idSimulacao'],
+										'label' => $description,
+										'cost'  => $total_shipping_cost, // Define o custo total do frete calculado
+										'calc_tax' => 'per_item'
+									);
+								
+									// Adiciona a taxa de envio
+									$this->add_rate($rate);								 
+							}
+
+							break; // Pare o loop após encontrar a correspondência
+						}
+					} 
+				}
+
+				// Verifica se o array de taxas está vazio
+        if ( empty($rates) ) {
+            // Adiciona uma taxa fictícia para mostrar a mensagem no frontend
+				$rate = array(
+					'id'    => 'no_shipping_option',
+					'label' => __('Nenhuma opção de entrega Kangu foi encontrada para esse pedido.', 'woocommerce'),
+					'cost'  => 99999, // Um valor fictício elevado para garantir que não seja selecionável
+					'package' => $package, // Inclui o pacote para verificação extra
+					'class'  => 'no-shipping-option' // Classe específica para identificação
+				);
+
+				//Alterando Esse ponto
+				// Exibe a mensagem sem permitir a seleção
+				$this->add_rate($rate);
+				add_action('wp_footer', array($this, 'enqueue_no_shipping_notice_script'), 20);
+        } else {
+            // Armazena as taxas de frete na sessão para reutilização
+            WC()->session->set($cache_key, $rates);
+
+            // Adiciona todas as taxas de frete armazenadas
+            foreach ($rates as $rate) {
+                $this->add_rate($rate);
+            }
+        }
+
+			} else {
 				// Adiciona uma taxa fictícia para mostrar a mensagem no frontend
 				$rate = array(
 					'id'    => 'no_shipping_option',
@@ -216,51 +340,14 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 					'package' => $package, // Inclui o pacote para verificação extra
 					'class'  => 'no-shipping-option' // Classe específica para identificação
 				);
+
+				//Alterando Esse ponto
 				// Exibe a mensagem sem permitir a seleção
 				$this->add_rate($rate);
 				add_action('wp_footer', array($this, 'enqueue_no_shipping_notice_script'), 20);
-				return;
 			}
-			// Obtém os dias adicionais das configurações
-			$additional_days = intval($this->get_option('default_days', 0));
-			
-			// Ordena as opções de envio pelo prazo de entrega em ordem crescente
-			usort($shipping_options, function($a, $b) {
-				return $a['prazoEnt'] - $b['prazoEnt'];
-			});
-
-			$rates = array(); // Array temporário para armazenar as taxas de envio
-
-			foreach ($shipping_options as $option) {
-								
-				$cost = isset($option['vlrFrete']) ? $option['vlrFrete'] : 0;
-				$description = sprintf(
-					"%s ( Entrega em até %d dias úteis )",
-					$option['descricao'],
-					$delivery_time
-				);
-
-				$rate = array(
-					'id'    => $option['idSimulacao'],
-					'label' => $description,
-					'cost'  => $cost,
-					'calc_tax' => 'per_item'
-				);
-
-				error_log(print_r($rate, true)); // Adiciona log para depuração
-				
-				$rates[] = $rate;
-				$this->add_rate($rate);
-			}
-
-			// Armazena as taxas de frete na sessão para reutilização
-			//WC()->session->set($cache_key, $rates);
-			delete_transient('kangu_shipping_' . md5( $package['destination']['postcode'] . WC()->cart->get_cart_contents_weight() . WC()->cart->get_subtotal() ));
-		} 
-	}
-
-
-	public function enqueue_no_shipping_notice_script() {
+		}
+		public function enqueue_no_shipping_notice_script() {
 		// Adiciona a verificação para garantir que o aviso seja exibido apenas no checkout
 		if (is_checkout()) {
 			?>
@@ -274,210 +361,97 @@ if ( ! class_exists( 'WC_Kangu_Shipping_Method' ) ) {
 			<?php
 		}
 	}
- 
-	private function get_shipping_cost( $package ) {
-		$rates = array(); // Array temporário para armazenar as taxas de envio
-	
-		// Define os métodos de envio disponíveis e suas configurações dinâmicas
-		$shipping_methods = array(
-			'Correios PAC via Kangu' => array(
-				'enabled' => $this->get_option('pac_enabled') === 'yes',
-				'display_name' => $this->get_option('pac_display_name', 'Correios PAC via Kangu'),
-			),
-			'Correios Sedex via Kangu' => array(
-				'enabled' => $this->get_option('correios_sedex_enabled') === 'yes',
-				'display_name' => $this->get_option('correios_sedex_display_name', 'Correios Sedex via Kangu'),
-			),
-			'Loggi via Kangu' => array(
-				'enabled' => $this->get_option('loggi_enabled') === 'yes',
-				'display_name' => $this->get_option('loggi_display_name', 'Loggi via Kangu'),
-			),
-			'Jadlog via Kangu' => array(
-				'enabled' => $this->get_option('jadlog_enabled') === 'yes',
-				'display_name' => $this->get_option('jadlog_display_name', 'Jadlog via Kangu'),
-			),	
-			
-			// Adicione mais métodos de envio conforme necessário
-		);
-	
-		// Processa cada produto no carrinho separadamente
-		foreach ( WC()->cart->get_cart() as $cart_item ) {
-			$product_id = $cart_item['product_id'];
-			$product_cep = get_post_meta( $product_id, 'product_postcode', true );
-	
-			// Obtém Dias Adicionais das configurações
-			$additional_days = intval( $this->get_option('default_days') );
-	
-			// Obtém a Custo por Peso Adicional das configurações
-			$extra_weight_cost = floatval( $this->get_option('extra_weight_cost') );
-	
-			// Obtém o Limite de Peso das configurações (exemplo: 5kg)
-			$weight_limit = floatval( $this->get_option('weight_limit') );
-	
-			// Obtém a Taxa de Manuseio das configurações
-			$handling_fee = floatval( $this->get_option('handling_fee') );
-	
-			// Obtém a Taxa de Taxa do Carrinho das configurações (percentual)
-			$cart_fee = floatval( $this->get_option('cart_fee') );
-	
-			if ( empty( $product_cep ) ) {
-				// Se não houver CEP configurado para o produto, usa um CEP padrão
-				$product_cep = $this->get_option('productcep');
-			}
-	
-			// Chama a API de frete para o produto individual
-			$shipping_options = $this->get_shipping_cost_for_product( $package, $product_cep, $cart_item );
-	
-			// Adiciona as opções de frete ao array de taxas
-			if ( is_array( $shipping_options ) ) {
-				foreach ( $shipping_options as $option ) {
-					// Nome da transportadora vindo da API
-					$descricao_api = $option['descricao'];
-	
-					// Obtém o valor do frete
-					$cost = isset($option['vlrFrete']) ? floatval($option['vlrFrete']) : 0;
-	
-					// Obtém o peso do item no carrinho
-					$product_weight = floatval( $cart_item['data']->get_weight() );
-	
-					// Calcula o peso adicional, se o peso do produto ultrapassar o limite
-					$additional_weight = $product_weight > $weight_limit ? $product_weight - $weight_limit : 0;
-	
-					// Calcula o custo adicional por peso extra
-					$extra_weight_cost_total = $additional_weight * $extra_weight_cost;
-	
-					// Aplica a taxa de carrinho (percentual) ao custo do frete
-					$cart_fee_amount = ($cost * $cart_fee) / 100;
-	
-					// Calcula o custo total do frete com peso adicional
-					$total_shipping_cost = $cost + $cart_fee_amount + $handling_fee + $extra_weight_cost_total;
-	
-					// Adiciona os dias adicionais ao prazo de entrega
-					$delivery_time = intval($option['prazoEnt']) + $additional_days;
-	
-					// Loop para verificar correspondência com os métodos de envio configurados
-					foreach ( $shipping_methods as $method_key => $method_data ) {
-						// error_log("descricao_api foi: " .$method_key);
- 
-						if ( $method_data['enabled'] && strtolower($descricao_api) === strtolower($method_key) ) {
-							// Se houver correspondência, use o nome personalizado
-							$descricao_api = $method_data['display_name'];
 
-							// Valida se o prazo de entrega e o custo são válidos
-							if ( $cost > 0 && $delivery_time > 0 ) {
-								$description = sprintf(
-									"%s (Entrega em até %d dias úteis)",
-									$descricao_api,
-									$delivery_time
-								);
-			
-								$rate = array(
-									'id'    => $option['idSimulacao'] . '-' . $product_id,
-									'label' => $description,
-									'cost'  => $total_shipping_cost,
-									'calc_tax' => 'per_item'
-								);
-			
-								$rates[] = $rate;
-							}
-							
-							break; // Pare o loop após encontrar a correspondência
-						}
-					}
-	
-				}
-			}
-		}
-	
-		// Se não houver taxas válidas, não faz nada (não exibe mensagem de erro)
-		if ( !empty( $rates ) ) {
-			foreach ( $rates as $rate ) {
-				$this->add_rate( $rate );
-			}
-		}
-		else {
-			// Adiciona uma taxa fictícia para mostrar a mensagem no frontend
-			$rate = array(
-				'id'    => 'no_shipping_option',
-				'label' => __('Nenhuma opção de entrega Kangu foi encontrada para esse pedido.', 'woocommerce'),
-				'cost'  => 99999, // Um valor fictício elevado para garantir que não seja selecionável
-				'package' => $package, // Inclui o pacote para verificação extra
-				'class'  => 'no-shipping-option' // Classe específica para identificação
-			);
-			
-			//Alterando Esse ponto
-			// Exibe a mensagem sem permitir a seleção
-			$this->add_rate($rate);
-			add_action('wp_footer', array($this, 'enqueue_no_shipping_notice_script'), 20);
-		}
-	}
-	 
-
-		private function get_shipping_cost_for_product( $package, $product_cep, $cart_item ) {
+		
+        private function get_shipping_cost( $package ) {
 			$api_key = $this->get_option('api_key');
-			$default_postcode =  $this->get_option('default_postcode');
-						
+			$cache_key = 'kangu_shipping_' . md5( $package['destination']['postcode'] . WC()->cart->get_cart_contents_weight() . WC()->cart->get_subtotal() );
+		
+			// Tenta obter os dados do cache
+			$cached_data = get_transient( $cache_key );
+			if ( $cached_data !== false ) {
+				return $cached_data;
+			}
+		
 			if ( empty( $api_key ) ) {
 				error_log('Kangu Shipping: API key não configurada.');
 				return array();
 			}
-			
-			if ( empty($product_cep) ){
-				$product_cep = $default_postcode;
+		
+			// Obtém o CEP de origem para cada produto no carrinho
+			$product_ceps = array();
+			foreach ( WC()->cart->get_cart() as $cart_item ) {
+				$product_id = $cart_item['product_id'];
+				$product_cep = get_post_meta( $product_id, 'product_postcode', true );
+				if ( !empty( $product_cep ) ) {
+					$product_ceps[] = $product_cep;
+				}
 			}
-
+		
+			// Usa o primeiro CEP encontrado, ou um valor padrão se nenhum for encontrado
+			$productcep = !empty( $product_ceps ) ? $product_ceps[0] : $this->get_option('productcep');
+		
+			if ( empty( $productcep ) ) {
+				error_log('Kangu Shipping: CEP de origem não configurado.');
+				return array();
+			}
+		
 			$url = 'https://portal.kangu.com.br/tms/transporte/simular';
 			
-			// Calcula o valor declarado, limitando-o a R$3500,00
-			$valorDeclarado = $cart_item['data']->get_price() * $cart_item['quantity'];
+			// Calcula o valor declarado para todos os itens no carrinho
+			$valorDeclarado = 0;
+			foreach ( WC()->cart->get_cart() as $cart_item ) {
+				$valorDeclarado += $cart_item['data']->get_price() * $cart_item['quantity'];
+			}
 			$valorDeclarado = min($valorDeclarado, 3500.00);
-			 
-			$pesoMercadoria = $cart_item['data']->get_weight() * $cart_item['quantity'];
-
+			
 			$args = array(
 				'method'  => 'POST',
-				'timeout' => 30,
+				'timeout' => 30,  // Aumenta o timeout para 30 segundos
 				'headers' => array(
 					'Content-Type' => 'application/json',
 					'token' => $api_key,
 				),
 				'body'    => wp_json_encode( array(
-					'cepOrigem'   => $product_cep,
+					'cepOrigem'   => $productcep,
 					'cepDestino'  => $package['destination']['postcode'],
 					'vlrMerc'     => $valorDeclarado,
-					'pesoMerc'    => $pesoMercadoria,
-					'produtos'    => array(
-						array(
-							'peso'          => $cart_item['data']->get_weight(),
-							'altura'        => $cart_item['data']->get_height(),
-							'largura'       => $cart_item['data']->get_width(),
-							'comprimento'   => $cart_item['data']->get_length(),
-							'valor'         => min($cart_item['data']->get_price(), 3500.00), // Usa o valor do produto limitado
-							'quantidade'    => $cart_item['quantity'],
-						),
-					),
-					'servicos'    => array( 'express', 'normal', 'econômico' ),
+					'pesoMerc'    => WC()->cart->get_cart_contents_weight(),
+					'produtos'    => array_map( function( $item ) {
+						return array(
+							'peso'          => $item['data']->get_weight(),
+							'altura'        => $item['data']->get_height(),
+							'largura'       => $item['data']->get_width(),
+							'comprimento'   => $item['data']->get_length(),
+							'valor'         => $valorDeclarado,
+							'quantidade'    => $item['quantity'],
+						);
+					}, WC()->cart->get_cart() ),
+					'servicos'    => array( 'express' ),
 					'ordernar'    => 'prazo',
 				) ),
 			);
-
+		
 			$response = wp_remote_post( $url, $args );
-
+		
 			if ( is_wp_error( $response ) ) {
 				error_log('Kangu Shipping: Erro na chamada da API: ' . $response->get_error_message());
 				return array();
 			}
-
+		
 			$body = wp_remote_retrieve_body( $response );
 			$data = json_decode( $body, true );
-
+		
 			if ( empty( $data ) || ! is_array( $data ) ) {
 				error_log('Kangu Shipping: Resposta da API inválida.');
 				return array();
 			}
-
+		
+			// Armazena os dados no cache por 1 hora
+			set_transient( $cache_key, $data, 10 * MINUTE_IN_SECONDS ); 
+		
 			return $data;
-		}
+		}		
     }
 }
 
@@ -487,18 +461,3 @@ function kangu_shipping_method_init() {
 }
 add_action( 'woocommerce_shipping_init', 'kangu_shipping_method_init' );
 
-// Ordena os métodos de envio para exibir o Kangu Shipping primeiro
-function sort_shipping_methods( $rates ) {
-    // Verifica se o método de envio Kangu Shipping está presente
-    if ( isset( $rates['kangu_shipping'] ) ) {
-        // Remove o método Kangu Shipping da lista
-        $kangu_shipping = $rates['kangu_shipping'];
-        unset( $rates['kangu_shipping'] );
-        
-        // Adiciona o método Kangu Shipping no início da lista
-        $rates = array( 'kangu_shipping' => $kangu_shipping ) + $rates;
-    }
-    
-    return $rates;
-}
-add_filter( 'woocommerce_package_rates', 'sort_shipping_methods', 10, 1 );
